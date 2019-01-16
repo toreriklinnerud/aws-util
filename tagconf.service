@@ -1,0 +1,15 @@
+[Unit]
+Description=Configure WireGuard from AWS tags
+Before=sniproxy.service
+Before=systemd-networkd.service
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/tagconf --write
+ExecStop=/sbin/tagconf --clear
+RemainAfterExit=true
+StandardOutput=journal
+
+[Install]
+WantedBy=sniproxy.service
+WantedBy=systemd-networkd.service
