@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Dependency: awscli
+# Dependency: ec2metadata
+
+readonly CONFIG_PATH=/etc/systemd/network
+readonly NETWORK="$CONFIG_PATH/wg0.network"
+readonly NETDEV="$CONFIG_PATH/wg0.netdev"
+
+function get_tag {
+	instance_id=$(ec2metadata --instance-id)
+	region=$(ec2metadata --availability-zone | sed 's/.$//')
+	tag_value=$(aws ec2 describe-tags \
+		--region ${region} \
+		--filters "Name=resource-id,Values=${instance_id},Name=key,Values=${1}" \
+	  --query "Tags[0].Value" \
+		--output text)
+	if [ -z "$tag_value" ] || [ $tag_value = "null" ]; then
+                 echo "Unable to read tag value"
+		 exit 1
+	 fi
+}
+
+function write_value {
+    value_escaped=$(echo "$2" | sed 's#\\#\\\\#g')
+    sed -i "/^${1}/s#=.*#=${value_escaped}#" $3
+}
+
+function check_equal {
+    if [ "$1" != "$2" ]; then
+	    echo "$1 (cloud)"
+	    echo "NOT EQUAL"
+	    echo "$2 (file)"
+	    exit 1
+    fi
+}
+
+case "$1" in
+
+"--clear")
+	write_value "Address" "" $NETWORK
+	write_value "PrivateKey" "" $NETDEV
+        ;;
+"--write")
+	get_tag "wg-ip"
+	value=$tag_value
+	write_value "Address" $value $NETWORK
+
+	get_tag "wg-private-key"
+	value=$tag_value
+	write_value "PrivateKey" $value $NETDEV
+	;;
+"--check")
+	get_tag "wg-ip"
+	cloud="Address=${tag_value}"
+	file=$(cat $NETWORK | grep Address=)
+	check_equal $cloud $file
+
+	get_tag "wg-private-key"
+	cloud="PrivateKey=${tag_value}"
+	file=$(cat $NETDEV | grep PrivateKey=)
+	check_equal $cloud $file
+	;;
+*)
+  echo "Not implemented. Use one of --clear, --write or --check."
+  exit 1
+  ;;
+esac
+
+
